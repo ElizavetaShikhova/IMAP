@@ -1,4 +1,5 @@
-To start the programm write `python main.py`
+To start the program write `python main.py`
+Please start program from console, because it doesn't work correctly in IDE
 
 Available commands:
 * `connect`: connect to server

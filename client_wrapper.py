@@ -1,7 +1,10 @@
 import os
 from datetime import datetime
+from dateutil import parser
 from email import message_from_bytes
 from email.header import decode_header
+from email import policy
+from email.message import EmailMessage
 
 from imapclient import IMAPClient
 
@@ -81,11 +84,16 @@ class IMAPClientWrapper:
         msg_data = self.client.fetch([msg_id], ['RFC822'])
         return message_from_bytes(msg_data[msg_id][b'RFC822'])
 
-    def extract_date(self, msg: message_from_bytes) -> str | None:
+    def extract_date(self, msg) -> str | None:
         date: str | None = msg['Date']
         if date:
-            return datetime.strptime(date, '%a, %d %b %Y %H:%M:%S %z').strftime('%Y-%m-%d %H:%M:%S')
-        return
+            try:
+                # Парсим дату с помощью dateutil
+                parsed_date = parser.parse(date)
+                return parsed_date.strftime('%Y-%m-%d %H:%M:%S')
+            except Exception as e:
+                print(f"Error parsing date: {e}")
+        return None
 
     def extract_sender(self, msg: message_from_bytes) -> str | None:
         sender: str | None = msg['From']
@@ -148,5 +156,30 @@ class IMAPClientWrapper:
 
     def logout(self) -> None:
         if self.client:
-            self.client.logout()
-            print("Logged out.")
+            try:
+                self.client.logout()
+                print("Logged out successfully.")
+            except Exception as e:
+                print(f"Error during logout: {e}")
+            finally:
+                self.client = None
+        else:
+            print("Client is already disconnected.")
+
+    def upload_email(self, folder: str, subject: str, body: str, recipients: list[str], sender: str) -> None:
+        if not self.client:
+            print("Not connected!")
+            return
+
+        # Создание письма в формате RFC 822
+        msg = EmailMessage(policy=policy.default)
+        msg['From'] = sender
+        msg['To'] = ', '.join(recipients)
+        msg['Subject'] = subject
+        msg.set_content(body)
+
+        try:
+            self.client.append(folder, msg.as_bytes())
+            print(f"Email uploaded to folder '{folder}' successfully!")
+        except Exception as e:
+            print(f"Failed to upload email: {e}")

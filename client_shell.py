@@ -45,4 +45,22 @@ class IMAPClientShell(cmd.Cmd):
     def do_exit(self, arg: str) -> None:
         print("Goodbye!")
         if self.client:
-            self.client.logout()
+            try:
+                self.client.logout()
+            except Exception as e:
+                print(f"Error during logout: {e}")
+        self.client = None
+        return True
+
+    def do_upload(self, arg: str) -> None:
+        if not self.client:
+            print("Not connected. Use 'connect' and 'login' first.")
+            return
+
+        folder = input("Folder to upload email (e.g., 'Sent'): ")
+        subject = input("Subject: ")
+        body = input("Body: ")
+        sender = input("Sender email: ")
+        recipients = input("Recipient emails (comma-separated): ").split(',')
+
+        self.client.upload_email(folder, subject, body, recipients, sender)

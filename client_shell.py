@@ -50,7 +50,6 @@ class IMAPClientShell(cmd.Cmd):
             except Exception as e:
                 print(f"Error during logout: {e}")
         self.client = None
-        return True
 
     def do_upload(self, arg: str) -> None:
         if not self.client:

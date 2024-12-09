@@ -5,6 +5,7 @@ from email import message_from_bytes
 from email.header import decode_header
 from email import policy
 from email.message import EmailMessage
+from pathlib import Path
 
 from imapclient import IMAPClient
 
@@ -21,16 +22,27 @@ class IMAPClientWrapper:
         try:
             self.client = IMAPClient(self.server, port=self.port, ssl=self.use_ssl)
             print(f"Connected to {self.server} succesfully")
-        except Exception as e:
+        except ConnectionError as e:
             print(f"Connection failed: {e}")
+        except TimeoutError as e:
+            print(f"Connection timed out: {e}")
+        except IMAPClient.Error as e:
+            print(f"IMAPClient error during connection: {e}")
 
     def login(self, username: str, password: str) -> None:
+        if not self.client:
+            print("Error: Not connected to the server. Call 'connect' first.")
+            return
+
         try:
             self.client.login(username, password)
             print("Logged in successfully!")
-        except Exception as e:
+        except IMAPClient.Error as e:
             print(f"Login failed: {e}")
-            self.client = None
+        except KeyError as e:
+            print(f"Key error during login: {e}")
+        except TypeError as e:
+            print(f"Type error during login: {e}")
 
     def list_folders(self) -> None:
         if self.client:
@@ -76,8 +88,11 @@ class IMAPClientWrapper:
         try:
             messages: list[int] = self.client.search(['ALL'])
             return messages[:limit]
-        except Exception:
-            print("Select folder first")
+        except IMAPClient.Error as e:
+            print(f"Error fetching message IDs: {e}")
+            return
+        except AttributeError as e:
+            print("Client is not initialized. Did you forget to connect?")
             return
 
     def fetch_message(self, msg_id: int):
@@ -91,9 +106,9 @@ class IMAPClientWrapper:
                 # Парсим дату с помощью dateutil
                 parsed_date = parser.parse(date)
                 return parsed_date.strftime('%Y-%m-%d %H:%M:%S')
-            except Exception as e:
+            except ValueError as e:
                 print(f"Error parsing date: {e}")
-        return None
+        return
 
     def extract_sender(self, msg: message_from_bytes) -> str | None:
         sender: str | None = msg['From']
@@ -145,26 +160,26 @@ class IMAPClientWrapper:
         print("-" * 40)
 
     def save_attachments(self, attachments: list[tuple[str, bytes]], save_dir: str = "attachments") -> None:
-        if not os.path.exists(save_dir):
-            os.makedirs(save_dir)
+        save_path = Path(save_dir)
+        save_path.mkdir(parents=True, exist_ok=True)
 
         for filename, file_data in attachments:
-            filepath: str = os.path.join(save_dir, filename)
-            with open(filepath, "wb") as f:
-                f.write(file_data)
+            filepath = save_path / filename
+            filepath.write_bytes(file_data)
             print(f"Attachment saved: {filepath}")
 
     def logout(self) -> None:
-        if self.client:
-            try:
-                self.client.logout()
-                print("Logged out successfully.")
-            except Exception as e:
-                print(f"Error during logout: {e}")
-            finally:
-                self.client = None
-        else:
+        if not self.client:
             print("Client is already disconnected.")
+            return
+
+        try:
+            self.client.logout()
+            print("Logged out successfully.")
+        except IMAPClient.Error as e:
+            print(f"Error during logout: {e}")
+        finally:
+            self.client = None
 
     def upload_email(self, folder: str, subject: str, body: str, recipients: list[str], sender: str) -> None:
         if not self.client:
@@ -181,5 +196,11 @@ class IMAPClientWrapper:
         try:
             self.client.append(folder, msg.as_bytes())
             print(f"Email uploaded to folder '{folder}' successfully!")
-        except Exception as e:
-            print(f"Failed to upload email: {e}")
+        except ConnectionError as e:
+            print(f"Connection error while uploading email: {e}")
+        except ValueError as e:
+            print(f"Value error while preparing or sending the email: {e}")
+        except IMAPClient.Error as e:
+            print(f"IMAPClient error during email upload: {e}")
+        except OSError as e:
+            print(f"OS error while writing email data: {e}")

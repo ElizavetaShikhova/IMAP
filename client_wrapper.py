@@ -43,17 +43,20 @@ class IMAPClientWrapper:
         except TypeError as e:
             print(f"Type error during login: {e}")
 
-    def list_folders(self) -> None:
+    def list_folders(self) -> list[str]:
         if self.client:
             try:
                 folders = self.client.list_folders()
                 print("Folders:")
                 for flags, delimiter, folder in folders:
                     print(f"- {folder}")
+                return [folder[-1] for folder in folders]
             except IMAPClientExceptions.IMAPClientError as e:
                 print(f"Error listing folders: {e}")
+                return []
         else:
             print("Not connected!")
+            return []
 
     def select_folder(self, folder: str) -> None:
         if self.client:

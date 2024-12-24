@@ -8,6 +8,7 @@ from dateutil import parser
 from imapclient import IMAPClient
 from imapclient import exceptions as IMAPClientExceptions
 
+
 class IMAPClientWrapper:
     def __init__(self, server: str, port: int, use_ssl: bool = True):
         self.server: str = server
@@ -32,7 +33,6 @@ class IMAPClientWrapper:
         if not self.client:
             print("Error: Not connected to the server. Call 'connect' first.")
             return
-
         try:
             self.client.login(username, password)
             print("Logged in successfully!")
@@ -116,12 +116,11 @@ class IMAPClientWrapper:
             raw_msg = msg_data.get(msg_id, {}).get(b'RFC822', None)
             if raw_msg:
                 return message_from_bytes(raw_msg, policy=policy.default)
-            else:
-                print(f"No data found for message ID {msg_id}.")
-                return None
+            print(f"No data found for message ID {msg_id}.")
+            return
         except IMAPClientExceptions.IMAPClientError as e:
             print(f"Error fetching message {msg_id}: {e}")
-            return None
+            return
 
     def extract_date(self, msg: 'email.message.Message') -> str | None:
         date: str | None = msg['Date']
@@ -131,7 +130,7 @@ class IMAPClientWrapper:
                 return parsed_date.strftime('%Y-%m-%d %H:%M:%S')
             except (ValueError, TypeError) as e:
                 print(f"Error parsing date: {e}")
-        return None
+        return
 
     def extract_sender(self, msg: 'email.message.Message') -> str | None:
         sender: str | None = msg['From']
@@ -143,7 +142,7 @@ class IMAPClientWrapper:
                 except UnicodeDecodeError:
                     return decoded_sender.decode('latin1', errors='ignore')
             return decoded_sender
-        return None
+        return
 
     def extract_subject(self, msg: 'email.message.Message') -> str | None:
         subject: str | None = msg['Subject']
@@ -155,64 +154,73 @@ class IMAPClientWrapper:
                 except UnicodeDecodeError:
                     return decoded_subject.decode('latin1', errors='ignore')
             return decoded_subject
-        return None
+        return
 
     def extract_body_and_attachments(self, msg: 'email.message.Message') -> tuple[str, list[tuple[str, bytes]]]:
         body: str = ""
         attachments: list[tuple[str, bytes]] = []
 
-        if msg.is_multipart():
-            for part in msg.walk():
-                content_type: str = part.get_content_type()
-                disposition: str = part.get_content_disposition()
-
-                if content_type == 'text/plain' and disposition != 'attachment':
-                    payload = part.get_payload(decode=True)
-                    if payload:
-                        body += payload.decode('utf-8', errors='ignore')
-
-                if disposition == 'attachment':
-                    filename: str | None = part.get_filename()
-                    if filename:
-                        decoded_filename = decode_header(filename)[0][0]
-                        if isinstance(decoded_filename, bytes):
-                            try:
-                                filename = decoded_filename.decode('utf-8', errors='ignore')
-                            except UnicodeDecodeError:
-                                filename = decoded_filename.decode('latin1', errors='ignore')
-                        else:
-                            filename = decoded_filename
-                        file_data: bytes | None = part.get_payload(decode=True)
-                        if file_data:
-                            attachments.append((filename, file_data))
-        else:
+        if not msg.is_multipart():
             payload = msg.get_payload(decode=True)
             if payload:
                 body = payload.decode('utf-8', errors='ignore')
+            return body, attachments
+
+        for part in msg.walk():
+            content_type: str = part.get_content_type()
+            disposition: str = part.get_content_disposition()
+
+            if content_type == 'text/plain' and disposition != 'attachment':
+                payload = part.get_payload(decode=True)
+                if payload:
+                    body += payload.decode('utf-8', errors='ignore')
+                continue
+
+            if disposition == 'attachment':
+                filename: str | None = part.get_filename()
+                if not filename:
+                    continue
+
+                decoded_filename = decode_header(filename)[0][0]
+                if isinstance(decoded_filename, bytes):
+                    try:
+                        filename = decoded_filename.decode('utf-8', errors='ignore')
+                    except UnicodeDecodeError:
+                        filename = decoded_filename.decode('latin1', errors='ignore')
+                else:
+                    filename = decoded_filename
+
+                file_data: bytes | None = part.get_payload(decode=True)
+                if file_data:
+                    attachments.append((filename, file_data))
 
         return body, attachments
 
     def extract_attachments(self, msg: 'email.message.Message') -> list[tuple[str, bytes]]:
         attachments: list[tuple[str, bytes]] = []
 
-        if msg.is_multipart():
-            for part in msg.walk():
-                disposition: str = part.get_content_disposition()
-                if disposition == 'attachment':
-                    filename: str | None = part.get_filename()
-                    if filename:
-                        decoded_filename = decode_header(filename)[0][0]
-                        if isinstance(decoded_filename, bytes):
-                            try:
-                                filename = decoded_filename.decode('utf-8', errors='ignore')
-                            except UnicodeDecodeError:
-                                filename = decoded_filename.decode('latin1', errors='ignore')
-                        else:
-                            filename = decoded_filename
-                        file_data: bytes | None = part.get_payload(decode=True)
-                        if file_data:
-                            attachments.append((filename, file_data))
+        if not msg.is_multipart():
+            return attachments
+        for part in msg.walk():
+            if part.get_content_disposition() != 'attachment':
+                continue
+            filename: str | None = part.get_filename()
+            if not filename:
+                continue
+            decoded_filename = decode_header(filename)[0][0]
+            if isinstance(decoded_filename, bytes):
+                try:
+                    filename = decoded_filename.decode('utf-8', errors='ignore')
+                except UnicodeDecodeError:
+                    filename = decoded_filename.decode('latin1', errors='ignore')
+            else:
+                filename = decoded_filename
+            file_data: bytes | None = part.get_payload(decode=True)
+            if file_data:
+                attachments.append((filename, file_data))
+
         return attachments
+
 
     def print_email_info(self, date: str | None, sender: str | None, subject: str | None, body: str) -> None:
         body_preview: str = (body[:50] + '...') if len(body) > 50 else body
@@ -221,6 +229,7 @@ class IMAPClientWrapper:
         print(f"Тема: {subject}")
         print(f"Первые 50 символов тела сообщения: {body_preview}")
         print("-" * 40)
+
 
     def save_attachments(self, attachments: list[tuple[str, bytes]], save_dir: str = "attachments") -> None:
         save_path = Path(save_dir)
@@ -234,6 +243,7 @@ class IMAPClientWrapper:
             except OSError as e:
                 print(f"Ошибка при сохранении вложения {filename}: {e}")
 
+
     def download_specific_attachments(self, msg_id: int, attachments: list[tuple[str, bytes]],
                                       save_dir: str = "attachments") -> None:
         save_path = Path(save_dir) / f"message_{msg_id}"
@@ -246,6 +256,7 @@ class IMAPClientWrapper:
                 print(f"Вложение '{filename}' из сообщения {msg_id} сохранено: {filepath}")
             except OSError as e:
                 print(f"Ошибка при сохранении вложения '{filename}': {e}")
+
 
     def delete_emails(self, msg_ids: list[int]) -> None:
         if not self.client:
@@ -263,6 +274,7 @@ class IMAPClientWrapper:
         except IMAPClientExceptions.IMAPClientError as e:
             print(f"Ошибка при удалении сообщений: {e}")
 
+
     def logout(self) -> None:
         if not self.client:
             print("Client is already disconnected.")
@@ -275,6 +287,7 @@ class IMAPClientWrapper:
             print(f"Error during logout: {e}")
         finally:
             self.client = None
+
 
     def upload_email(self, folder: str, subject: str, body: str, recipients: list[str], sender: str) -> None:
         if not self.client:

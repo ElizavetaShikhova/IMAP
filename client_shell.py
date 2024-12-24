@@ -59,6 +59,17 @@ class IMAPClientShell(cmd.Cmd):
             print("No messages available.")
             return
 
+        self.display_available_messages(messages)
+
+        msg_ids = self.get_message_ids_input()
+        if not msg_ids:
+            print("No valid message IDs provided.")
+            return
+
+        for msg_id in msg_ids:
+            self.process_message(msg_id)
+
+    def display_available_messages(self, messages: list[int]) -> None:
         print("Available messages:")
         for msg_id in messages:
             msg = self.client.fetch_message(msg_id)
@@ -67,55 +78,52 @@ class IMAPClientShell(cmd.Cmd):
                 sender = self.client.extract_sender(msg) or "(No Sender)"
                 date = self.client.extract_date(msg) or "(No Date)"
                 attachments = self.client.extract_attachments(msg)
-                if attachments:
-                    print(
-                        f"ID: {msg_id} | Date: {date} | From: {sender} | Subject: {subject} | Attachments: {len(attachments)}")
-                else:
-                    print(f"ID: {msg_id} | Date: {date} | From: {sender} | Subject: {subject} | Attachments: 0")
+                attachment_count = len(attachments) if attachments else 0
+                print(
+                    f"ID: {msg_id} | Date: {date} | From: {sender} | Subject: {subject} | Attachments: {attachment_count}")
 
+    def get_message_ids_input(self) -> list[int]:
         ids_input = input("Enter message IDs to download attachments from (separated by commas): ")
         try:
-            msg_ids = [int(id_.strip()) for id_ in ids_input.split(',') if id_.strip().isdigit()]
+            return [int(id_.strip()) for id_ in ids_input.split(',') if id_.strip().isdigit()]
         except ValueError:
             print("Invalid input. Please enter valid message IDs separated by commas.")
+            return []
+
+    def process_message(self, msg_id: int) -> None:
+        msg = self.client.fetch_message(msg_id)
+        if msg is None:
+            print(f"Message ID {msg_id} not found.")
             return
 
-        if not msg_ids:
-            print("No valid message IDs provided.")
+        attachments = self.client.extract_attachments(msg)
+        if not attachments:
+            print(f"No attachments found in message ID {msg_id}.")
             return
 
-        for msg_id in msg_ids:
-            msg = self.client.fetch_message(msg_id)
-            if msg is None:
-                print(f"Message ID {msg_id} not found.")
-                continue
+        print(f"\nAttachments in message ID {msg_id}:")
+        for idx, (filename, _) in enumerate(attachments, start=1):
+            print(f"{idx}. {filename}")
 
-            attachments = self.client.extract_attachments(msg)
-            if not attachments:
-                print(f"No attachments found in message ID {msg_id}.")
-                continue
+        selected_attachments = self.get_attachment_selection(attachments)
+        if not selected_attachments:
+            print("No valid attachments selected. Skipping this message.")
+            return
 
-            print(f"\nAttachments in message ID {msg_id}:")
-            for idx, (filename, _) in enumerate(attachments, start=1):
-                print(f"{idx}. {filename}")
+        self.client.download_specific_attachments(msg_id, selected_attachments)
 
-            selection = input(
-                "Enter attachment numbers to download (separated by commas) or 'all' to download all: ").lower()
-            if selection == 'all':
-                selected_attachments = attachments
-            else:
-                try:
-                    indices = [int(num.strip()) for num in selection.split(',') if num.strip().isdigit()]
-                    selected_attachments = [attachments[i - 1] for i in indices if 0 < i <= len(attachments)]
-                except (ValueError, IndexError):
-                    print("Invalid selection. Skipping this message.")
-                    continue
+    def get_attachment_selection(self, attachments: list[tuple[str, bytes]]) -> list[tuple[str, bytes]]:
+        selection = input(
+            "Enter attachment numbers to download (separated by commas) or 'all' to download all: ").lower()
+        if selection == 'all':
+            return attachments
 
-            if not selected_attachments:
-                print("No valid attachments selected. Skipping this message.")
-                continue
-
-            self.client.download_specific_attachments(msg_id, selected_attachments)
+        try:
+            indices = [int(num.strip()) for num in selection.split(',') if num.strip().isdigit()]
+            return [attachments[i - 1] for i in indices if 0 < i <= len(attachments)]
+        except (ValueError, IndexError):
+            print("Invalid selection. Skipping this message.")
+            return []
 
     def do_delete(self, arg: str) -> None:
         if not self.client:
